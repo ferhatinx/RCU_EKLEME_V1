@@ -23,3 +23,12 @@ python manage.py collectstatic
 ```python
 python manage.py runserver
 ```
+
+## Ücretsiz canlıya alma (Render)
+
+1. VS Code'da **Publish Branch** ile projeyi GitHub'a gönder.
+2. Render hesabında **New + → Blueprint** seçip GitHub deposunu bağla.
+3. Depodaki `render.yaml` ayarlarını onaylayıp deploy et.
+4. Deploy tamamlandığında Render'ın verdiği `.onrender.com` adresini aç.
+
+Ücretsiz web servisi bir süre trafik almazsa uykuya geçebilir; ilk açılış yavaş olabilir. Ücretsiz diskteki SQLite verileri kalıcı değildir. Bu RCU aracı veriyi tarayıcıda işlediğinden kullanıcı girdileri sunucuda saklanmaz.

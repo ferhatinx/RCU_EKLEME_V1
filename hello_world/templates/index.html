@@ -1,33 +1,809 @@
-{% load django_browser_reload %}
 {% load static %}
-
 <!doctype html>
 <html lang="en">
 
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="GitHub Codespaces ♥️ Django">
-    <meta name="author" content="GitHub Codespaces">
-    <meta name="generator" content="GitHub Codespaces">
-    <meta name="theme-color" content="#000000">
-    <title>{% block title %}{{ title }} | GitHub Codespaces ♥️ Django{% endblock %}</title>
-    
+    <title>{{ title }}</title>
     <link rel="stylesheet" href="{% static 'main.css' %}">
 </head>
 
 <body>
-    <div class="App">
-        <header class="App-header">
-            <img src="{% static 'Octocat.png' %}" class="App-logo" alt="logo" />
-            <p>
-                GitHub Codespaces <span class="heart">♥️</span> Django
-            </p>
-            <p class="small">
-                Edit <code>hello_world/templates/index.html</code> and see changes live!
-            </p>
+    <div class="rcu-app">
+        <header class="topbar">
+            <div>
+                <p class="eyebrow">RCU Tanımlama</p>
+                <h1>RCU Ekleme ve İsimlendirme v1</h1>
+            </div>
         </header>
+
+        <main class="workspace-grid">
+            <section class="panel">
+                <div class="panel-header">
+                    <h2>Input</h2>
+                </div>
+
+                <label class="site-code-field">
+                    <span>Saha Kodu</span>
+                    <input id="siteCode" type="text" placeholder="A3000" autocomplete="off">
+                </label>
+
+                <textarea id="rawData" spellcheck="false" aria-label="Raw RCU data input"></textarea>
+
+                <div class="toolbar">
+                    <button id="loadSample" class="primary">Load sample</button>
+                    <button id="parseData" class="success">Parse</button>
+                    <button id="clearData" class="danger">Clear</button>
+                </div>
+
+                <p id="statusMessage" class="status-message" aria-live="polite"></p>
+            </section>
+
+        </main>
+
+        <section class="panel entries-panel">
+            <div class="panel-header">
+                <h2>Matched RET rows</h2>
+                <div class="entries-actions">
+                    <span id="rowCountLabel" class="row-count"></span>
+                    <button id="addSector" type="button" class="success">Add sector</button>
+                </div>
+            </div>
+            <div id="entriesContainer" class="entries"></div>
+        </section>
+
+        <section class="panel output-panel">
+            <div class="panel-header">
+                <h2>TXT Output</h2>
+                <div class="tabs" aria-label="Output tabs">
+                    <button class="tab-button active" type="button" data-tab="addret">ADD RET</button>
+                    <button class="tab-button" type="button" data-tab="summary">Summary</button>
+                    <button class="tab-button" type="button" data-tab="rmvret">RMV RET</button>
+                </div>
+            </div>
+
+            <textarea id="generatedOutput" readonly aria-label="Generated RCU output"></textarea>
+
+            <div class="toolbar">
+                <button id="copyOutput" class="primary">Copy</button>
+                <button id="downloadOutput" class="muted">Download .txt</button>
+            </div>
+        </section>
     </div>
+
+    <script>
+        const sampleData = `Control Port Cabinet No.  Control Port Subrack No.  Control Port Slot No.  Control Port No.  Result   ALD Device Type  Vendor Code  Serial No.         Protocol Version  Configure Status  Number of Subunits  Failure Cause
+0                         62                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P76013Lr1  AISG2.0           CONFIGURED        1                   NULL
+0                         62                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P77055Rr2  AISG2.0           CONFIGURED        1                   NULL
+0                         62                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P78013Ly1  AISG2.0           CONFIGURED        1                   NULL
+0                         62                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P79044Ry2  AISG2.0           CONFIGURED        1                   NULL
+0                         80                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91L1D056Lr1  AISG2.0           CONFIGURED        1                   NULL
+0                         80                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91L1E073Rr2  AISG2.0           CONFIGURED        1                   NULL
+0                         80                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91L1F087Ly1  AISG2.0           CONFIGURED        1                   NULL
+0                         80                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91L1G054Ry2  AISG2.0           CONFIGURED        1                   NULL
+0                         81                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P5P024Lr1  AISG2.0           CONFIGURED        1                   NULL
+0                         81                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P5Q024Rr2  AISG2.0           CONFIGURED        1                   NULL
+0                         81                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P5R017Ly1  AISG2.0           CONFIGURED        1                   NULL
+0                         81                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P5S088Ry2  AISG2.0           CONFIGURED        1                   NULL`;
+
+        const DEVICE_CODE_MAP = {
+            r1: 0,
+            r2: 1,
+            b1: 4,
+            b2: 5,
+            y1: 8,
+            y2: 9,
+            y3: 10,
+            y4: 11,
+        };
+
+        const RETSUBUNIT_NAME_CODE_MAP = {
+            700: 6,
+            800: 1,
+            900: 7,
+            1800: 3,
+            2100: 8,
+            2600: 5,
+        };
+
+        const ANTENNA_SCENARIOS = ['DAISY_CHAIN', 'REGULAR', 'SECTOR_SPLITTING', '2G_EXTENSION'];
+
+        const state = {
+            rows: [],
+            activeTab: 'addret',
+            availableSubracks: [],
+            sectors: [],
+        };
+
+        const rawDataInput = document.getElementById('rawData');
+        const generatedOutput = document.getElementById('generatedOutput');
+        const entriesContainer = document.getElementById('entriesContainer');
+        const statusMessage = document.getElementById('statusMessage');
+        const rowCountLabel = document.getElementById('rowCountLabel');
+        const siteCodeInput = document.getElementById('siteCode');
+
+        function normalizeSerial(serial) {
+            return String(serial || '').trim();
+        }
+
+        function detectCode(serial) {
+            const normalized = normalizeSerial(serial).toLowerCase();
+            const match = normalized.match(/(r1|r2|b1|b2|y1|y2|y3|y4)$/);
+            return match ? match[1].toLowerCase() : '';
+        }
+
+        function getRetOptions(code, sectorNumber, vendor) {
+            const sectorLabel = `S${sectorNumber}`;
+            const options = {
+                r1: [`${sectorLabel}_700`, `${sectorLabel}_700-800-900`, `${sectorLabel}_800-900`, `${sectorLabel}_900`],
+                r2: [`${sectorLabel}_700`, `${sectorLabel}_700-800-900`, `${sectorLabel}_800-900`, `${sectorLabel}_900`],
+                b1: [`${sectorLabel}_1800`, `${sectorLabel}_1800-2100`, `${sectorLabel}_2100`, `${sectorLabel}_2600`],
+                b2: [`${sectorLabel}_1800`, `${sectorLabel}_1800-2100`, `${sectorLabel}_2100`, `${sectorLabel}_2600`],
+                y1: [`${sectorLabel}_1800`, `${sectorLabel}_1800-2100`, `${sectorLabel}_2100`, `${sectorLabel}_2600`],
+                y2: [`${sectorLabel}_1800`, `${sectorLabel}_1800-2100`, `${sectorLabel}_2100`, `${sectorLabel}_2600`],
+                y3: [`${sectorLabel}_1800`, `${sectorLabel}_1800-2100`, `${sectorLabel}_2100`, `${sectorLabel}_2600`],
+                y4: [`${sectorLabel}_1800`, `${sectorLabel}_1800-2100`, `${sectorLabel}_2100`, `${sectorLabel}_2600`],
+            };
+            const vendorCode = String(vendor || '(HW)').trim().replace(/[()]/g, '').toUpperCase();
+            if (vendorCode !== 'HW') {
+                return [...new Set([...options.r1, ...options.b1])];
+            }
+            return options[code] || [ `${sectorLabel}_0000` ];
+        }
+
+        function calculateDeviceNo(serial, sectorNumber) {
+            const code = detectCode(serial);
+            if (!code || !(code in DEVICE_CODE_MAP)) {
+                return '';
+            }
+            const base = sectorNumber * 100;
+            return String(base + DEVICE_CODE_MAP[code]);
+        }
+
+        function getDefaultRetName(row) {
+            return row.code ? `S${row.sector}_${row.code.toUpperCase()}` : '';
+        }
+
+        function escapeHtml(value) {
+            return String(value || '').replace(/[&<>"']/g, (character) => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+            })[character]);
+        }
+
+        function getRetSubunitName(row) {
+            if (!row.sector) {
+                return '';
+            }
+
+            const rawSiteCode = siteCodeInput.value.trim().toUpperCase();
+            if (!rawSiteCode || !/^[A-Z0-9]+$/.test(rawSiteCode)) {
+                return '';
+            }
+
+            const sectorNumber = Number(row.sector);
+            const sectorDigit = Math.abs(sectorNumber) % 10;
+            const selectedBands = String(row.retName || row.retSelection || '').match(/700|800|900|1800|2100|2600/g) || [];
+
+            if (selectedBands.length) {
+                const bandCodes = selectedBands.map((band) => `${RETSUBUNIT_NAME_CODE_MAP[band]}${sectorDigit}`);
+                const siteCode = selectedBands.length === 1 ? rawSiteCode.replace(/0$/, '') : rawSiteCode;
+                return `S${siteCode}_${bandCodes.join('-')}`;
+            }
+
+            const serialCode = normalizeSerial(row.serial).match(/([rby]\d+)$/i);
+            if (!serialCode) {
+                return '';
+            }
+            return `S${rawSiteCode}_S${sectorNumber}_${serialCode[1].toUpperCase()}`;
+        }
+
+        function parseRows(text) {
+            const lines = text.split(/\n/).map((line) => line.trim()).filter(Boolean);
+            if (!lines.length) {
+                return [];
+            }
+
+            const rows = [];
+
+            const headerIndex = lines.findIndex((line) => /subrack/i.test(line) && /serial/i.test(line));
+            let subrackIndex = 1;
+            let serialIndex = 7;
+            let vendorIndex = 6;
+            let retTypeIndex = 5;
+            let dataLines = lines;
+
+            if (headerIndex !== -1) {
+                const headerCells = lines[headerIndex]
+                    .split(/\s{2,}|\t+/)
+                    .map((cell) => cell.trim())
+                    .filter(Boolean);
+                subrackIndex = headerCells.findIndex((cell) => /subrack/i.test(cell));
+                serialIndex = headerCells.findIndex((cell) => /serial/i.test(cell));
+                vendorIndex = headerCells.findIndex((cell) => /vendor/i.test(cell));
+                const headerRetTypeIndex = headerCells.findIndex((cell) => /ald\s+device\s+type/i.test(cell));
+                if (headerRetTypeIndex !== -1) {
+                    retTypeIndex = headerRetTypeIndex;
+                }
+                dataLines = lines.filter((line, index) => index !== headerIndex);
+            }
+
+            dataLines.forEach((line) => {
+                const cells = line
+                    .split(/\s{2,}|\t+/)
+                    .map((cell) => cell.trim())
+                    .filter(Boolean);
+
+                if (!cells.length) {
+                    return;
+                }
+
+                const subrackCell = cells[subrackIndex] || cells[1] || cells[0];
+                const serialCell = cells[serialIndex] || cells[cells.length - 1];
+                const vendorCell = cells[vendorIndex] || '(HW)';
+                const retType = cells[retTypeIndex] || 'SINGLE_RET';
+
+                const subrack = String(subrackCell || '').replace(/[^0-9]/g, '');
+                const serial = normalizeSerial(serialCell);
+
+                if (!subrack || !serial) {
+                    return;
+                }
+
+                rows.push({
+                    id: `${subrack}-${serial}-${rows.length}`,
+                    subrack: Number(subrack),
+                    vendor: vendorCell || '(HW)',
+                    retType: retType,
+                    antennaScenario: 'DAISY_CHAIN',
+                    serial: serial,
+                    code: detectCode(serial),
+                    deviceNo: '',
+                    retSelection: '',
+                    retNameMode: 'auto',
+                    manualRetName: '',
+                    retName: '',
+                });
+            });
+
+            const sectorsBySubrack = [...new Set(rows.map((row) => row.subrack))]
+                .sort((a, b) => b - a)
+                .reduce((mapping, subrack, index) => {
+                    mapping.set(subrack, index + 1);
+                    return mapping;
+                }, new Map());
+            state.availableSubracks = [...sectorsBySubrack.keys()];
+            state.sectors = [...sectorsBySubrack].map(([subrack, number]) => ({ number, subrack }));
+
+            rows.forEach((row) => {
+                row.sector = sectorsBySubrack.get(row.subrack);
+                row.deviceNo = calculateDeviceNo(row.serial, row.sector);
+                row.retSelection = '';
+            });
+
+            applyRetNames(rows);
+            return rows;
+        }
+
+        function applyRetNames(rows) {
+            const sectorCounts = {};
+            rows.forEach((row) => {
+                const manualName = String(row.manualRetName || '').trim();
+                if (row.retNameMode === 'manual' && manualName) {
+                    row.retName = manualName;
+                    return;
+                }
+
+                if (!row.sector) {
+                    row.retName = '';
+                    return;
+                }
+
+                const baseName = row.retNameMode === 'manual'
+                    ? getDefaultRetName(row)
+                    : row.retSelection
+                        ? String(row.retSelection).replace(/_B$/, '')
+                        : getDefaultRetName(row);
+                if (!baseName) {
+                    row.retName = '';
+                    return;
+                }
+
+                const sectorKey = `sector-${row.sector}`;
+                if (!sectorCounts[sectorKey]) {
+                    sectorCounts[sectorKey] = {};
+                }
+
+                const count = sectorCounts[sectorKey][baseName] || 0;
+                sectorCounts[sectorKey][baseName] = count + 1;
+                row.retName = count === 0 ? baseName : `${baseName}_B`;
+            });
+        }
+
+        function getSortedRows() {
+            return [...state.rows].sort((a, b) => {
+                const aEmpty = a.deviceNo === '';
+                const bEmpty = b.deviceNo === '';
+
+                if (aEmpty && bEmpty) {
+                    return a.subrack - b.subrack;
+                }
+                if (aEmpty) return 1;
+                if (bEmpty) return -1;
+                return Number(a.deviceNo) - Number(b.deviceNo);
+            });
+        }
+
+        function updateSectorSubrack(sectorNumber, nextSubrack) {
+            const sector = state.sectors.find((item) => item.number === sectorNumber);
+            if (!sector || sector.subrack === nextSubrack) {
+                return;
+            }
+
+            const previousSubrack = sector.subrack;
+            const conflictingSector = state.sectors.find((item) => item.number !== sectorNumber && item.subrack === nextSubrack);
+            sector.subrack = nextSubrack;
+            if (conflictingSector) {
+                conflictingSector.subrack = previousSubrack;
+            }
+
+            const sectorBySubrack = new Map(state.sectors.map((item) => [item.subrack, item.number]));
+            state.rows.forEach((row) => {
+                const nextSector = sectorBySubrack.get(row.subrack);
+                if (nextSector === undefined) {
+                    row.sector = null;
+                    row.deviceNo = '';
+                    row.retSelection = '';
+                    return;
+                }
+
+                if (row.sector !== nextSector) {
+                    const oldNameSuffix = String(row.retSelection || '').replace(/^S\d+_/, '');
+                    row.sector = nextSector;
+                    const options = getRetOptions(row.code, nextSector, row.vendor);
+                    row.retSelection = options.find((option) => option.endsWith(`_${oldNameSuffix}`)) || '';
+                    row.deviceNo = calculateDeviceNo(row.serial, nextSector);
+                }
+            });
+            refreshView();
+        }
+
+        function addSector() {
+            if (!state.availableSubracks.length) {
+                statusMessage.textContent = 'Parse RET data before adding a sector.';
+                return;
+            }
+
+            const nextNumber = Math.max(0, ...state.sectors.map((sector) => sector.number)) + 1;
+            const subrack = state.availableSubracks[0];
+            state.sectors.push({ number: nextNumber, subrack });
+            refreshView();
+            statusMessage.textContent = `Sector ${nextNumber} added.`;
+        }
+
+        function deleteSector(sectorNumber) {
+            const sector = state.sectors.find((item) => item.number === sectorNumber);
+            if (!sector) return;
+
+            state.sectors = state.sectors
+                .filter((item) => item.number !== sectorNumber)
+                .map((item) => ({
+                    ...item,
+                    number: item.number > sectorNumber ? item.number - 1 : item.number,
+                }));
+
+            state.rows.forEach((row) => {
+                if (row.sector === sectorNumber) {
+                    row.sector = null;
+                    row.deviceNo = '';
+                    row.retSelection = '';
+                    return;
+                }
+                if (row.sector < sectorNumber) return;
+                const oldNameSuffix = String(row.retSelection || '').replace(/^S\d+_/, '');
+                row.sector -= 1;
+                row.deviceNo = calculateDeviceNo(row.serial, row.sector);
+                const options = getRetOptions(row.code, row.sector, row.vendor);
+                row.retSelection = options.find((option) => option.endsWith(`_${oldNameSuffix}`)) || '';
+            });
+
+            refreshView();
+            statusMessage.textContent = `Sector ${sectorNumber} deleted. Its RETs are now unassigned.`;
+        }
+
+        function moveRetToUnassigned(rowId) {
+            const row = state.rows.find((item) => item.id === rowId);
+            if (!row || !row.sector) return;
+
+            row.sector = null;
+            row.deviceNo = '';
+            row.retSelection = '';
+            refreshView();
+            statusMessage.textContent = 'RET moved to Unassigned RETs.';
+        }
+
+        function moveRetToSector(rowId, targetSector) {
+            const row = state.rows.find((item) => item.id === rowId);
+            const sector = state.sectors.find((item) => item.number === targetSector);
+            if (!row || !sector || row.sector === targetSector) {
+                return;
+            }
+
+            const oldNameSuffix = String(row.retSelection || '').replace(/^S\d+_/, '');
+            row.sector = targetSector;
+            row.subrack = sector.subrack;
+            row.deviceNo = calculateDeviceNo(row.serial, targetSector);
+            const options = getRetOptions(row.code, targetSector, row.vendor);
+            row.retSelection = options.find((option) => option.endsWith(`_${oldNameSuffix}`)) || '';
+
+            refreshView();
+            statusMessage.textContent = `RET moved to Sector ${targetSector} (Subrack ${sector.subrack}).`;
+        }
+
+        function renderRows() {
+            const sortedRows = getSortedRows();
+            rowCountLabel.textContent = `${sortedRows.length} rows`;
+
+            if (!state.sectors.length && !sortedRows.length) {
+                entriesContainer.innerHTML = '<div class="empty-state">No rows yet. Paste a table or load the sample.</div>';
+                return;
+            }
+
+            const groupedBySector = sortedRows.reduce((groups, row) => {
+                if (!groups[row.sector]) {
+                    groups[row.sector] = [];
+                }
+                groups[row.sector].push(row);
+                return groups;
+            }, {});
+
+            entriesContainer.innerHTML = [...state.sectors]
+                .sort((a, b) => a.number - b.number)
+                .map(({ number: sector, subrack: assignedSubrack }) => {
+                    const sectorHue = sector === 1
+                        ? 0
+                        : sector === 2
+                            ? 210
+                            : sector === 3
+                                ? 130
+                                : Math.round((sector * 137.508) % 360);
+                    const sectorStyle = sector <= 3
+                            ? ''
+                            : `style="--sector-accent: hsl(${sectorHue}, 90%, 65%); --sector-border: hsla(${sectorHue}, 85%, 60%, .75); --sector-wash: hsla(${sectorHue}, 85%, 55%, .28); --sector-row: hsla(${sectorHue}, 85%, 55%, .20); --sector-drop: hsla(${sectorHue}, 85%, 55%, .38)"`;
+                    const rows = groupedBySector[sector] || [];
+                    const subrackOptions = state.availableSubracks
+                        .map((subrack) => `<option value="${subrack}" ${subrack === assignedSubrack ? 'selected' : ''}>Subrack ${subrack}</option>`)
+                        .join('');
+                    const retRows = rows.map((row) => {
+                        const options = getRetOptions(row.code, row.sector, row.vendor);
+                        const scenarioOptions = ANTENNA_SCENARIOS
+                            .map((scenario) => `<option value="${scenario}" ${scenario === row.antennaScenario ? 'selected' : ''}>${scenario}</option>`)
+                            .join('');
+                        const manualMode = row.retNameMode === 'manual';
+                        const selectHtml = [`<option value="" ${row.retSelection ? '' : 'selected'}>Auto (RET code)</option>`, ...options.map((option) => {
+                            const selected = option === row.retSelection ? 'selected' : '';
+                            return `<option value="${option}" ${selected}>${option}</option>`;
+                        })].join('');
+                        const nameEditor = manualMode
+                            ? `<input type="text" value="${escapeHtml(row.manualRetName)}" placeholder="${escapeHtml(getDefaultRetName(row))}" data-role="manualRetName" data-id="${row.id}" aria-label="Manual RET name">`
+                            : `<select data-role="retSelection" data-id="${row.id}" aria-label="RET name">${selectHtml}</select>`;
+
+                        return `
+                            <tr data-id="${row.id}">
+                                <td><button type="button" class="ret-drag-handle" draggable="true" aria-label="Drag RET to another sector" title="Drag RET to another sector">↕</button></td>
+                                <td><input type="number" value="${row.deviceNo}" data-role="deviceNo" data-id="${row.id}" placeholder="Auto"></td>
+                                <td>${row.serial}</td>
+                                <td>${escapeHtml(row.vendor)}</td>
+                                <td><select data-role="antennaScenario" data-id="${row.id}" aria-label="Antenna scenario">${scenarioOptions}</select></td>
+                                <td>
+                                    <div class="ret-name-control">
+                                        <select data-role="retNameMode" data-id="${row.id}" aria-label="RET name entry mode">
+                                            <option value="auto" ${manualMode ? '' : 'selected'}>Auto</option>
+                                            <option value="manual" ${manualMode ? 'selected' : ''}>Manual</option>
+                                        </select>
+                                        ${nameEditor}
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+
+                    return `
+                        <section class="sector-group sector-color-${sector <= 3 ? sector : 'other'}" ${sectorStyle}>
+                            <div class="sector-header">
+                                <span class="sector-label">Sector ${sector}</span>
+                                <div class="sector-actions">
+                                    <label class="sector-assignment">
+                                        <span>Subrack No.</span>
+                                        <select data-sector="${sector}" aria-label="Subrack for sector ${sector}">${subrackOptions}</select>
+                                    </label>
+                                    <button type="button" class="delete-sector" data-delete-sector="${sector}" title="Delete sector; move its RETs to unassigned">Delete</button>
+                                </div>
+                            </div>
+                            <div class="sector-table-wrap" data-sector="${sector}">
+                                <table class="sector-table">
+                                    <thead>
+                                        <tr><th>Move</th><th>Device No.</th><th>Serial No.</th><th>Vendor Code</th><th>Antenna Scenario</th><th>RET Name</th></tr>
+                                    </thead>
+                                    <tbody>${retRows || '<tr class="empty-sector"><td colspan="6">Drag RETs here</td></tr>'}</tbody>
+                                </table>
+                            </div>
+                        </section>
+                    `;
+                }).join('') + (() => {
+                    const unassignedRows = sortedRows.filter((row) => !row.sector);
+
+                    const retRows = unassignedRows.map((row) => `
+                        <tr data-id="${row.id}">
+                            <td><button type="button" class="ret-drag-handle" draggable="true" aria-label="Drag RET to a sector" title="Drag RET to a sector">↕</button></td>
+                            <td>---</td>
+                            <td>${row.serial}</td>
+                            <td>${escapeHtml(row.vendor)}</td>
+                            <td>---</td>
+                            <td>Tanımsız</td>
+                        </tr>
+                    `).join('');
+
+                    return `
+                        <section class="sector-group unassigned-group">
+                            <div class="sector-header"><span>Tanımsız RET’ler</span></div>
+                            <div class="sector-table-wrap" data-sector="unassigned">
+                                <table class="sector-table">
+                                    <thead>
+                                        <tr><th>Move</th><th>Device No.</th><th>Serial No.</th><th>Vendor Code</th><th>Antenna Scenario</th><th>RET Name</th></tr>
+                                    </thead>
+                                    <tbody>${retRows || '<tr class="empty-sector"><td colspan="6">RET’leri buraya sürükleyin</td></tr>'}</tbody>
+                                </table>
+                            </div>
+                        </section>
+                    `;
+                })();
+        }
+
+        siteCodeInput.addEventListener('input', () => {
+            renderRows();
+            buildOutput();
+        });
+
+        function buildOutput() {
+            const sortedRows = getSortedRows();
+            const content = sortedRows
+                .filter((row) => row.serial && row.sector)
+                .map((row) => {
+                    const vendor = row.vendor || '(HW)';
+                    const value = `ADD RET:DEVICENO=${row.deviceNo || ''},DEVICENAME="${row.retName || ''}",CTRLCN=0,CTRLSRN=${row.subrack},CTRLSN=0,RETTYPE=${row.retType || 'SINGLE_RET'},SCENARIO=${row.antennaScenario || 'DAISY_CHAIN'},VENDORCODE="${vendor}",SERIALNO="${row.serial}";`;
+                    return value;
+                })
+                .join('\n');
+
+            const summary = sortedRows
+                .map((row) => `${row.sector ? row.deviceNo || '---' : 'Unassigned'} | ${row.retName || '---'} | ${row.serial}`)
+                .join('\n');
+
+            const rmvRetContent = state.sectors
+                .flatMap(({ number }) => [0, 1, 4, 5, 8, 9, 10, 11].map((offset) => `RMV RET:DEVICENO=${number * 100 + offset};`))
+                .join('\n');
+
+            const subunitNameCounts = {};
+            const retSubunitContent = sortedRows
+                .map((row) => {
+                    if (!row.serial || !row.sector) return '';
+                    const baseName = getRetSubunitName(row);
+                    if (!baseName) return '';
+
+                    const countKey = `${row.sector}:${baseName}`;
+                    const duplicateCount = subunitNameCounts[countKey] || 0;
+                    subunitNameCounts[countKey] = duplicateCount + 1;
+                    const subunitName = duplicateCount === 0 ? baseName : `${baseName}_B`;
+                    return `MOD RETSUBUNIT:DEVICENO=${row.deviceNo || ''},SUBUNITNO=1,SUBNAME="${subunitName}";`;
+                })
+                .filter(Boolean)
+                .join('\n');
+
+            if (state.activeTab === 'addret') {
+                generatedOutput.value = [content, retSubunitContent].filter(Boolean).join('\n\n');
+            } else if (state.activeTab === 'summary') {
+                generatedOutput.value = summary;
+            } else {
+                generatedOutput.value = rmvRetContent;
+            }
+        }
+
+        function refreshView() {
+            applyRetNames(state.rows);
+            renderRows();
+            buildOutput();
+        }
+
+        siteCodeInput.addEventListener('input', buildOutput);
+
+        function handleInputChange(event) {
+            const target = event.target;
+            const row = state.rows.find((item) => item.id === target.dataset.id);
+            if (!row) return;
+
+            if (target.dataset.role === 'deviceNo') {
+                row.deviceNo = target.value === '' ? '' : String(target.value);
+            }
+
+            if (target.dataset.role === 'retSelection') {
+                row.retSelection = target.value;
+            }
+
+            if (target.dataset.role === 'retNameMode') {
+                row.retNameMode = target.value;
+            }
+
+            if (target.dataset.role === 'antennaScenario') {
+                row.antennaScenario = target.value;
+            }
+
+            if (target.dataset.role === 'manualRetName') {
+                row.manualRetName = target.value;
+                applyRetNames(state.rows);
+                buildOutput();
+                return;
+            }
+
+            if (target.dataset.role === 'serial') {
+                const nextSerial = target.value.trim();
+                row.serial = nextSerial;
+                row.code = detectCode(nextSerial);
+                row.deviceNo = calculateDeviceNo(nextSerial, row.sector);
+                const options = getRetOptions(row.code, row.sector, row.vendor);
+                if (!options.includes(row.retSelection)) {
+                    row.retSelection = options[0];
+                }
+            }
+
+            refreshView();
+        }
+
+        function parseAndRender() {
+            const text = rawDataInput.value.trim();
+            if (!text) {
+                state.rows = [];
+                state.availableSubracks = [];
+                state.sectors = [];
+                statusMessage.textContent = 'No data to parse.';
+                refreshView();
+                return;
+            }
+
+            state.rows = parseRows(text);
+            statusMessage.textContent = `${state.rows.length} rows parsed successfully.`;
+            refreshView();
+        }
+
+        document.getElementById('loadSample').addEventListener('click', () => {
+            rawDataInput.value = sampleData;
+            parseAndRender();
+        });
+
+        document.getElementById('parseData').addEventListener('click', parseAndRender);
+        document.getElementById('addSector').addEventListener('click', addSector);
+
+        document.getElementById('clearData').addEventListener('click', () => {
+            rawDataInput.value = '';
+            siteCodeInput.value = '';
+            state.rows = [];
+            state.availableSubracks = [];
+            state.sectors = [];
+            generatedOutput.value = '';
+            entriesContainer.innerHTML = '<div class="empty-state">No rows yet.</div>';
+            statusMessage.textContent = 'Cleared.';
+            rowCountLabel.textContent = '0 rows';
+        });
+
+        document.getElementById('copyOutput').addEventListener('click', async () => {
+            const text = generatedOutput.value;
+            if (!text) {
+                statusMessage.textContent = 'Nothing to copy.';
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(text);
+                statusMessage.textContent = 'Output copied to clipboard.';
+            } catch (error) {
+                statusMessage.textContent = 'Clipboard access failed. You can still select and copy the output.';
+            }
+        });
+
+        document.getElementById('downloadOutput').addEventListener('click', () => {
+            const text = generatedOutput.value;
+            if (!text) {
+                statusMessage.textContent = 'Nothing to download.';
+                return;
+            }
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = state.activeTab === 'addret'
+                ? 'rcu_add_ret.txt'
+                : state.activeTab === 'rmvret' ? 'rcu_rmv_ret.txt' : 'rcu_definition.txt';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+            statusMessage.textContent = 'Downloaded.';
+        });
+
+        document.querySelectorAll('.tab-button').forEach((button) => {
+            button.addEventListener('click', () => {
+                state.activeTab = button.dataset.tab;
+                document.querySelectorAll('.tab-button').forEach((tab) => {
+                    tab.classList.toggle('active', tab === button);
+                });
+                buildOutput();
+            });
+        });
+
+        entriesContainer.addEventListener('input', handleInputChange);
+        entriesContainer.addEventListener('click', (event) => {
+            const deleteButton = event.target.closest('button[data-delete-sector]');
+            if (deleteButton) {
+                deleteSector(Number(deleteButton.dataset.deleteSector));
+            }
+        });
+        entriesContainer.addEventListener('dragstart', (event) => {
+            const draggedRow = event.target.closest('tr[data-id]');
+            if (!draggedRow || !event.target.closest('.ret-drag-handle')) {
+                event.preventDefault();
+                return;
+            }
+
+            event.dataTransfer.setData('text/plain', draggedRow.dataset.id);
+            event.dataTransfer.effectAllowed = 'move';
+            draggedRow.classList.add('is-dragging');
+        });
+        entriesContainer.addEventListener('dragend', (event) => {
+            event.target.closest('tr[data-id]')?.classList.remove('is-dragging');
+            entriesContainer.querySelectorAll('.drop-target').forEach((element) => {
+                element.classList.remove('drop-target');
+            });
+        });
+        entriesContainer.addEventListener('dragover', (event) => {
+            const sectorGroup = event.target.closest('.sector-group');
+            if (!sectorGroup) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            sectorGroup.classList.add('drop-target');
+        });
+        entriesContainer.addEventListener('dragleave', (event) => {
+            const sectorGroup = event.target.closest('.sector-group');
+            if (sectorGroup && !sectorGroup.contains(event.relatedTarget)) {
+                sectorGroup.classList.remove('drop-target');
+            }
+        });
+        entriesContainer.addEventListener('drop', (event) => {
+            const dropTarget = event.target.closest('[data-sector]');
+            if (!dropTarget) return;
+            event.preventDefault();
+            dropTarget.closest('.sector-group')?.classList.remove('drop-target');
+            const rowId = event.dataTransfer.getData('text/plain');
+            if (dropTarget.dataset.sector === 'unassigned') {
+                moveRetToUnassigned(rowId);
+            } else {
+                moveRetToSector(rowId, Number(dropTarget.dataset.sector));
+            }
+        });
+        entriesContainer.addEventListener('change', (event) => {
+            const target = event.target;
+            if (target.matches('select[data-sector]')) {
+                updateSectorSubrack(Number(target.dataset.sector), Number(target.value));
+                return;
+            }
+            handleInputChange(event);
+        });
+
+        rawDataInput.value = sampleData;
+        parseAndRender();
+    </script>
 </body>
 
 </html>

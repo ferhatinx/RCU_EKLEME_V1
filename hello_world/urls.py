@@ -23,7 +23,8 @@ from django.conf.urls.static import static
 from hello_world.core import views as core_views
 
 urlpatterns = [
-    path("", core_views.index),
+    path("", core_views.index, name="rcu-add"),
+    path("update/", core_views.update, name="rcu-update"),
     path("admin/", admin.site.urls),
 ]
 if settings.DEBUG:

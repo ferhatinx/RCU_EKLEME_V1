@@ -1,6 +1,6 @@
 {% load static %}
 <!doctype html>
-<html lang="en">
+<html lang="tr">
 
 <head>
     <meta charset="utf-8">
@@ -14,8 +14,12 @@
         <header class="topbar">
             <div>
                 <p class="eyebrow">RCU Tanımlama</p>
-                <h1>RCU Ekleme ve İsimlendirme v1</h1>
+                <h1>{% if is_update_page %}RCU Değiştirme{% else %}RCU Ekleme ve İsimlendirme v1{% endif %}</h1>
             </div>
+            <nav class="page-navigation" aria-label="RCU işlemleri">
+                <a href="{% url 'rcu-add' %}" class="{% if not is_update_page %}active{% endif %}" {% if not is_update_page %}aria-current="page"{% endif %}>RCU Ekleme</a>
+                <a href="{% url 'rcu-update' %}" class="{% if is_update_page %}active{% endif %}" {% if is_update_page %}aria-current="page"{% endif %}>RCU Değiştirme</a>
+            </nav>
         </header>
 
         <main class="workspace-grid">
@@ -24,7 +28,7 @@
                     <h2>Input</h2>
                 </div>
 
-                <label class="site-code-field">
+                <label class="site-code-field" {% if is_update_page %}hidden{% endif %}>
                     <span>Saha Kodu</span>
                     <input id="siteCode" type="text" placeholder="A3000" autocomplete="off">
                 </label>
@@ -32,7 +36,6 @@
                 <textarea id="rawData" spellcheck="false" aria-label="Raw RCU data input"></textarea>
 
                 <div class="toolbar">
-                    <button id="loadSample" class="primary">Load sample</button>
                     <button id="parseData" class="success">Parse</button>
                     <button id="clearData" class="danger">Clear</button>
                 </div>
@@ -42,7 +45,7 @@
 
         </main>
 
-        <section class="panel entries-panel">
+        <section class="panel entries-panel" {% if is_update_page %}hidden{% endif %}>
             <div class="panel-header">
                 <h2>Matched RET rows</h2>
                 <div class="entries-actions">
@@ -56,11 +59,20 @@
         <section class="panel output-panel">
             <div class="panel-header">
                 <h2>TXT Output</h2>
-                <div class="tabs" aria-label="Output tabs">
+                <div class="tabs" aria-label="Output tabs" {% if is_update_page %}hidden{% endif %}>
                     <button class="tab-button active" type="button" data-tab="addret">ADD RET</button>
                     <button class="tab-button" type="button" data-tab="summary">Summary</button>
                     <button class="tab-button" type="button" data-tab="rmvret">RMV RET</button>
                 </div>
+            </div>
+
+            <div id="swapControls" class="update-controls" {% if not is_update_page %}hidden{% endif %}>
+                <p>Seri numaralarını değiştirmek için cihaz tablosunu yapıştırın ve birden fazla cihaz seçin. Seçilen cihazlar sırayla çiftler halinde değiştirilecektir.</p>
+                <label>
+                    <span>Cihazlar</span>
+                    <select id="swapDeviceList" multiple size="8"></select>
+                </label>
+                <button id="generateSwap" type="button" class="primary">Değiştirme komutlarını oluştur</button>
             </div>
 
             <textarea id="generatedOutput" readonly aria-label="Generated RCU output"></textarea>
@@ -73,20 +85,6 @@
     </div>
 
     <script>
-        const sampleData = `Control Port Cabinet No.  Control Port Subrack No.  Control Port Slot No.  Control Port No.  Result   ALD Device Type  Vendor Code  Serial No.         Protocol Version  Configure Status  Number of Subunits  Failure Cause
-0                         62                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P76013Lr1  AISG2.0           CONFIGURED        1                   NULL
-0                         62                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P77055Rr2  AISG2.0           CONFIGURED        1                   NULL
-0                         62                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P78013Ly1  AISG2.0           CONFIGURED        1                   NULL
-0                         62                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P79044Ry2  AISG2.0           CONFIGURED        1                   NULL
-0                         80                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91L1D056Lr1  AISG2.0           CONFIGURED        1                   NULL
-0                         80                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91L1E073Rr2  AISG2.0           CONFIGURED        1                   NULL
-0                         80                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91L1F087Ly1  AISG2.0           CONFIGURED        1                   NULL
-0                         80                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91L1G054Ry2  AISG2.0           CONFIGURED        1                   NULL
-0                         81                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P5P024Lr1  AISG2.0           CONFIGURED        1                   NULL
-0                         81                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P5Q024Rr2  AISG2.0           CONFIGURED        1                   NULL
-0                         81                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P5R017Ly1  AISG2.0           CONFIGURED        1                   NULL
-0                         81                        0                      RET               SUCCESS  SINGLE_RET       HW           N4882Q91P5S088Ry2  AISG2.0           CONFIGURED        1                   NULL`;
-
         const DEVICE_CODE_MAP = {
             r1: 0,
             r2: 1,
@@ -107,13 +105,15 @@
             2600: 5,
         };
 
+        const IS_UPDATE_PAGE = {{ is_update_page|yesno:"true,false" }};
         const ANTENNA_SCENARIOS = ['DAISY_CHAIN', 'REGULAR', 'SECTOR_SPLITTING', '2G_EXTENSION'];
 
         const state = {
             rows: [],
-            activeTab: 'addret',
+            activeTab: '{{ is_update_page|yesno:"modret,addret" }}',
             availableSubracks: [],
             sectors: [],
+            updateOutput: '',
         };
 
         const rawDataInput = document.getElementById('rawData');
@@ -215,6 +215,10 @@
             let serialIndex = 7;
             let vendorIndex = 6;
             let retTypeIndex = 5;
+            let deviceNoIndex = -1;
+            let deviceNameIndex = -1;
+            let cabinetIndex = -1;
+            let slotIndex = -1;
             let dataLines = lines;
 
             if (headerIndex !== -1) {
@@ -225,6 +229,11 @@
                 subrackIndex = headerCells.findIndex((cell) => /subrack/i.test(cell));
                 serialIndex = headerCells.findIndex((cell) => /serial/i.test(cell));
                 vendorIndex = headerCells.findIndex((cell) => /vendor/i.test(cell));
+                retTypeIndex = -1;
+                deviceNoIndex = headerCells.findIndex((cell) => /^device\s*no\.?$/i.test(cell));
+                deviceNameIndex = headerCells.findIndex((cell) => /^device\s*name$/i.test(cell));
+                cabinetIndex = headerCells.findIndex((cell) => /control\s+port\s+cabinet/i.test(cell));
+                slotIndex = headerCells.findIndex((cell) => /control\s+port\s+slot/i.test(cell));
                 const headerRetTypeIndex = headerCells.findIndex((cell) => /ald\s+device\s+type/i.test(cell));
                 if (headerRetTypeIndex !== -1) {
                     retTypeIndex = headerRetTypeIndex;
@@ -259,6 +268,10 @@
                     subrack: Number(subrack),
                     vendor: vendorCell || '(HW)',
                     retType: retType,
+                    sourceDeviceNo: deviceNoIndex === -1 ? '' : String(cells[deviceNoIndex] || '').trim(),
+                    sourceDeviceName: deviceNameIndex === -1 ? '' : String(cells[deviceNameIndex] || '').trim(),
+                    controlCabinet: cabinetIndex === -1 ? '0' : String(cells[cabinetIndex] || '0').trim(),
+                    controlSlot: slotIndex === -1 ? '0' : String(cells[slotIndex] || '0').trim(),
                     antennaScenario: 'DAISY_CHAIN',
                     serial: serial,
                     code: detectCode(serial),
@@ -449,7 +462,7 @@
             rowCountLabel.textContent = `${sortedRows.length} rows`;
 
             if (!state.sectors.length && !sortedRows.length) {
-                entriesContainer.innerHTML = '<div class="empty-state">No rows yet. Paste a table or load the sample.</div>';
+                entriesContainer.innerHTML = '<div class="empty-state">No rows yet. Paste a table.</div>';
                 return;
             }
 
@@ -608,14 +621,151 @@
                 generatedOutput.value = [content, retSubunitContent].filter(Boolean).join('\n\n');
             } else if (state.activeTab === 'summary') {
                 generatedOutput.value = summary;
+            } else if (state.activeTab === 'modret') {
+                generatedOutput.value = state.updateOutput;
             } else {
                 generatedOutput.value = rmvRetContent;
             }
         }
 
+        function quoteCommandValue(value) {
+            return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        }
+
+        function renderSwapControls() {
+            const selectedIds = new Set(Array.from(document.getElementById('swapDeviceList')?.selectedOptions || []).map((option) => option.value));
+            const options = state.rows
+                .filter((row) => row.serial && (row.sourceDeviceNo || row.deviceNo))
+                .map((row) => {
+                    const deviceNo = row.sourceDeviceNo || row.deviceNo;
+                    const deviceName = row.sourceDeviceName || row.retName || getDefaultRetName(row);
+                    return `<option value="${escapeHtml(row.id)}" ${selectedIds.has(row.id) ? 'selected' : ''}>${escapeHtml(deviceNo)} | ${escapeHtml(deviceName)} | ${escapeHtml(row.serial)}</option>`;
+                });
+            const emptyOption = '<option value="">No devices parsed</option>';
+            const optionMarkup = options.length ? options.join('') : emptyOption;
+            document.getElementById('swapDeviceList').innerHTML = optionMarkup;
+            document.getElementById('swapControls').hidden = state.activeTab !== 'modret';
+            document.getElementById('generateSwap').disabled = options.length < 2;
+        }
+
+        function generateTemporarySerial(usedSerials) {
+            let serial;
+            do {
+                const randomValues = new Uint32Array(2);
+                window.crypto.getRandomValues(randomValues);
+                serial = `TMP${Date.now().toString(36).toUpperCase()}${Array.from(randomValues, (value) => value.toString(36).toUpperCase()).join('')}`;
+            } while (usedSerials.has(serial));
+            usedSerials.add(serial);
+            return serial;
+        }
+
+        function buildSwapOutput() {
+            const selectedIds = Array.from(document.getElementById('swapDeviceList').selectedOptions).map((option) => option.value).filter(Boolean);
+            if (selectedIds.length < 2) {
+                statusMessage.textContent = 'Parse a table with at least two devices before generating swap commands.';
+                return;
+            }
+
+            const selectedRows = selectedIds
+                .map((id) => state.rows.find((row) => row.id === id))
+                .filter(Boolean);
+
+            if (selectedRows.length !== selectedIds.length) {
+                statusMessage.textContent = 'One or more selected devices could not be resolved.';
+                return;
+            }
+
+            const uniqueSelectedRows = [...new Map(selectedRows.map((row) => [row.id, row])).values()];
+            if (uniqueSelectedRows.length < 2) {
+                statusMessage.textContent = 'Select at least two different devices.';
+                return;
+            }
+
+            const usedSerials = new Set(state.rows.map((row) => row.serial));
+            const getDeviceFields = (row) => {
+                const deviceNo = row.sourceDeviceNo || row.deviceNo;
+                const deviceName = row.sourceDeviceName || row.retName || getDefaultRetName(row);
+                return {
+                    deviceNo,
+                    deviceName,
+                    cabinet: row.controlCabinet || '0',
+                    subrack: row.subrack,
+                    slot: row.controlSlot || '0',
+                    scenario: row.antennaScenario || 'DAISY_CHAIN',
+                    vendor: row.vendor || '(HW)',
+                };
+            };
+            const command = (row, serial, overrides = {}) => {
+                const device = { ...getDeviceFields(row), ...overrides };
+                return `MOD RET:DEVICENO=${device.deviceNo},DEVICENAME="${quoteCommandValue(device.deviceName)}",CTRLCN=${device.cabinet},CTRLSRN=${device.subrack},CTRLSN=${device.slot},SCENARIO=${device.scenario},VENDORCODE="${quoteCommandValue(device.vendor)}",SERIALNO="${quoteCommandValue(serial)}";`;
+            };
+
+            const operations = [];
+            for (let index = 0; index < uniqueSelectedRows.length - 1; index += 1) {
+                const rowA = uniqueSelectedRows[index];
+                const rowB = uniqueSelectedRows[index + 1];
+                if (rowA.serial === rowB.serial) {
+                    statusMessage.textContent = `Cihaz ${rowA.serial} ve ${rowB.serial} aynı seri numarasına sahip, bu yüzden bu çift atlanıyor.`;
+                    continue;
+                }
+
+                const temporarySerialA = generateTemporarySerial(usedSerials);
+                const temporarySerialB = generateTemporarySerial(usedSerials);
+                const rowAFields = getDeviceFields(rowA);
+                const rowBFields = getDeviceFields(rowB);
+
+                operations.push(
+                    command(rowA, temporarySerialA, {
+                        subrack: rowBFields.subrack,
+                        slot: rowBFields.slot,
+                        cabinet: rowBFields.cabinet,
+                        scenario: rowBFields.scenario,
+                        vendor: rowBFields.vendor,
+                        deviceName: rowBFields.deviceName,
+                    }),
+                    command(rowB, temporarySerialB, {
+                        subrack: rowAFields.subrack,
+                        slot: rowAFields.slot,
+                        cabinet: rowAFields.cabinet,
+                        scenario: rowAFields.scenario,
+                        vendor: rowAFields.vendor,
+                        deviceName: rowAFields.deviceName,
+                    }),
+                    command(rowA, rowB.serial, {
+                        subrack: rowBFields.subrack,
+                        slot: rowBFields.slot,
+                        cabinet: rowBFields.cabinet,
+                        scenario: rowBFields.scenario,
+                        vendor: rowBFields.vendor,
+                        deviceName: rowBFields.deviceName,
+                    }),
+                    command(rowB, rowA.serial, {
+                        subrack: rowAFields.subrack,
+                        slot: rowAFields.slot,
+                        cabinet: rowAFields.cabinet,
+                        scenario: rowAFields.scenario,
+                        vendor: rowAFields.vendor,
+                        deviceName: rowAFields.deviceName,
+                    }),
+                );
+            }
+
+            if (!operations.length) {
+                statusMessage.textContent = 'Seçilen cihazlar arasında değiştirilecek geçerli çift bulunamadı.';
+                return;
+            }
+
+            state.updateOutput = operations.join('\n');
+            buildOutput();
+            statusMessage.textContent = `${uniqueSelectedRows.length} cihaz seçildi; ardışık çiftler için değişim komutları üretildi.`;
+        }
+
         function refreshView() {
             applyRetNames(state.rows);
             renderRows();
+            if (IS_UPDATE_PAGE) {
+                renderSwapControls();
+            }
             buildOutput();
         }
 
@@ -665,6 +815,7 @@
 
         function parseAndRender() {
             const text = rawDataInput.value.trim();
+            state.updateOutput = '';
             if (!text) {
                 state.rows = [];
                 state.availableSubracks = [];
@@ -679,13 +830,20 @@
             refreshView();
         }
 
-        document.getElementById('loadSample').addEventListener('click', () => {
-            rawDataInput.value = sampleData;
-            parseAndRender();
+        rawDataInput.addEventListener('paste', () => {
+            window.setTimeout(parseAndRender, 0);
         });
 
         document.getElementById('parseData').addEventListener('click', parseAndRender);
         document.getElementById('addSector').addEventListener('click', addSector);
+        document.getElementById('generateSwap').addEventListener('click', () => {
+            try {
+                buildSwapOutput();
+            } catch (error) {
+                console.error('Failed to generate serial swap commands.', error);
+                statusMessage.textContent = 'Could not generate temporary serial numbers. Check secure random generation in this browser.';
+            }
+        });
 
         document.getElementById('clearData').addEventListener('click', () => {
             rawDataInput.value = '';
@@ -693,7 +851,9 @@
             state.rows = [];
             state.availableSubracks = [];
             state.sectors = [];
+            state.updateOutput = '';
             generatedOutput.value = '';
+            renderSwapControls();
             entriesContainer.innerHTML = '<div class="empty-state">No rows yet.</div>';
             statusMessage.textContent = 'Cleared.';
             rowCountLabel.textContent = '0 rows';
@@ -725,7 +885,9 @@
             link.href = url;
             link.download = state.activeTab === 'addret'
                 ? 'rcu_add_ret.txt'
-                : state.activeTab === 'rmvret' ? 'rcu_rmv_ret.txt' : 'rcu_definition.txt';
+                : state.activeTab === 'rmvret'
+                    ? 'rcu_rmv_ret.txt'
+                    : state.activeTab === 'modret' ? 'rcu_mod_ret.txt' : 'rcu_definition.txt';
             document.body.appendChild(link);
             link.click();
             link.remove();
@@ -792,6 +954,9 @@
                 moveRetToSector(rowId, Number(dropTarget.dataset.sector));
             }
         });
+
+        renderSwapControls();
+        buildOutput();
         entriesContainer.addEventListener('change', (event) => {
             const target = event.target;
             if (target.matches('select[data-sector]')) {
@@ -801,8 +966,6 @@
             handleInputChange(event);
         });
 
-        rawDataInput.value = sampleData;
-        parseAndRender();
     </script>
 </body>
 

@@ -303,37 +303,43 @@
         }
 
         function applyRetNames(rows) {
-            const sectorCounts = {};
+            const duplicateGroups = new Map();
             rows.forEach((row) => {
                 const manualName = String(row.manualRetName || '').trim();
-                if (row.retNameMode === 'manual' && manualName) {
-                    row.retName = manualName;
-                    return;
-                }
-
                 if (!row.sector) {
                     row.retName = '';
                     return;
                 }
 
-                const baseName = row.retNameMode === 'manual'
-                    ? getDefaultRetName(row)
-                    : row.retSelection
-                        ? String(row.retSelection).replace(/_B$/, '')
-                        : getDefaultRetName(row);
+                const baseName = row.retNameMode === 'manual' && manualName
+                    ? manualName
+                    : row.retNameMode === 'manual'
+                        ? getDefaultRetName(row)
+                        : row.retSelection
+                            ? String(row.retSelection).replace(/_B$/, '')
+                            : getDefaultRetName(row);
                 if (!baseName) {
                     row.retName = '';
                     return;
                 }
 
-                const sectorKey = `sector-${row.sector}`;
-                if (!sectorCounts[sectorKey]) {
-                    sectorCounts[sectorKey] = {};
+                row.retName = baseName;
+                const groupKey = `${row.sector}:${baseName}`;
+                if (!duplicateGroups.has(groupKey)) {
+                    duplicateGroups.set(groupKey, []);
+                }
+                duplicateGroups.get(groupKey).push(row);
+            });
+
+            duplicateGroups.forEach((group) => {
+                if (group.length < 2) {
+                    return;
                 }
 
-                const count = sectorCounts[sectorKey][baseName] || 0;
-                sectorCounts[sectorKey][baseName] = count + 1;
-                row.retName = count === 0 ? baseName : `${baseName}_B`;
+                const largestDevice = group.reduce((largest, row) => (
+                    Number(row.deviceNo) > Number(largest.deviceNo) ? row : largest
+                ));
+                largestDevice.retName = `${largestDevice.retName}_B`;
             });
         }
 
@@ -597,8 +603,11 @@
                 .map((row) => `${row.sector ? row.deviceNo || '---' : 'Unassigned'} | ${row.retName || '---'} | ${row.serial}`)
                 .join('\n');
 
-            const rmvRetContent = state.sectors
-                .flatMap(({ number }) => [0, 1, 4, 5, 8, 9, 10, 11].map((offset) => `RMV RET:DEVICENO=${number * 100 + offset};`))
+            const rmvSectorCount = state.sectors.length
+                ? Math.max(4, ...state.sectors.map(({ number }) => number))
+                : 0;
+            const rmvRetContent = Array.from({ length: rmvSectorCount }, (_, index) => index + 1)
+                .flatMap((number) => [0, 1, 4, 5, 8, 9, 10, 11].map((offset) => `RMV RET:DEVICENO=${number * 100 + offset};`))
                 .join('\n');
 
             const subunitNameCounts = {};

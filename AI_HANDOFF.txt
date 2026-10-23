@@ -1,0 +1,150 @@
+AI DEVIR NOTU - PROJENIN TAMAMI
+
+Bu belge, ferhatinx/RCU_EKLEME_V1 deposundaki uygulamayi ve son calisma baglamini baska bir AI aracina aktarmak icindir. Bilgiler mevcut dosyalarin incelenmesine dayanir; burada belirtilmeyen urun/altyapi davranislari varsayilmamalidir.
+
+1. PROJE KIMLIGI VE AMACI
+- Depo: ferhatinx/RCU_EKLEME_V1
+- Yerel proje yolu: /workspaces/codespaces-django
+- Django projesi: hello_world
+- Gorunen urun adi: RCU Ekleme ve Isimlendirme v1 / RCU Degistirme
+- Uygulama, kullanicinin yapistirdigi RCU/RET cihaz tablosunu tarayip RCU komutlari olusturan web arayuzudur.
+- Arayuz ve is kurallarinin buyuk kismi tek bir Django HTML sablonundaki istemci tarafi JavaScript'inde uygulanmistir.
+- Incelenen depoda ayri bir REST API, ozel Django model/uygulama veritabani semasi, JavaScript paket sistemi veya test paketi bulunmuyor.
+- Uygulama verisini kaydetme akisi gorulmedi; giris ve duzenlenen RET satirlari tarayici bellekteki JavaScript state icinde tutuluyor.
+
+2. UYGULAMA AKISI
+- GET / (URL adi rcu-add): RCU ekleme/isimlendirme arayuzunu acar.
+- GET /update/ (URL adi rcu-update): seri numarasi degistirme arayuzunu acar.
+- Her iki URL de ayni hello_world/templates/index.html sablonunu render eder; is_update_page degiskeni farkli alanlari gosterip gizler.
+- Kullanici ham tablo metnini textarea'ya yapistirir veya Parse'a tiklar.
+- Tarayici JavaScript'i satirlari analiz eder, sektorleri/RET'leri olusturur, kullanici duzenlemelerine gore komut metnini uretir.
+- Kullanici ciktinin sekmesini secip kopyalayabilir veya TXT indirebilir.
+- Django tarafinda bu akislara ait sunucuya POST edilen bir veri ya da kaydedilen islem bulunmuyor.
+
+3. DOSYA HARITASI
+- manage.py: Django yonetim komutlarinin giris noktasi.
+- hello_world/settings.py: Django ayarlari; ortam degiskenleri, statik dosyalar, SQLite ve guvenlik ayarlari.
+- hello_world/urls.py: /, /update/, /admin/ rotalari; DEBUG modunda browser reload ve medya/statik servis rotalari.
+- hello_world/core/views.py: index() ve update() fonksiyonlari yalnizca ayni sablonu gerekli context ile render eder.
+- hello_world/templates/index.html: tum ana UI, giris/parse, sektor ve RET duzenleme, ciktinin kurulmasi ve tarayici event handler'lari.
+- hello_world/static/main.css: koyu tema, responsive gorunum, sektor tablolarinin/alanlarin stili.
+- hello_world/static/Octocat.png: statik gorsel; mevcut template'te kullanimina dair incelemede bir bulgu yok.
+- hello_world/asgi.py ve hello_world/wsgi.py: standart Django ASGI/WSGI girisleri.
+- requirements.txt: Python bagimliliklari.
+- render.yaml: Render web servisi build/start ayarlari.
+- .devcontainer/devcontainer.json: Codespaces/devcontainer kurulum, migrate ve runserver komutlari.
+- .env.example: ornek yerel ortam degiskenleri; gercek .env dosyasini okuma veya icindeki degerleri aktarima dahil etme.
+- .gitignore: db.sqlite3, Python cache, staticfiles, .env ve venv dosyalarini dislar.
+- db.sqlite3: yerel SQLite dosyasi; repo tarafindan ignore ediliyor, kullanici verisi/icerigi devir notuna tasinmamali.
+- AI_HANDOFF.txt: bu devir belgesi.
+- README veya depoda izlenen test dosyalari bulunmuyor.
+
+4. RCU EKLEME SAYFASI (KOK /)
+- Site Code alani yalnizca ekleme sayfasinda gosterilir.
+- Giris metni satirlara ayrilir. Baslik satiri Subrack ve Serial ifadelerini iceriyorsa sutun indisleri baslik adlarina gore bulunur; alanlar bosluk gruplari veya tab ile ayrilir.
+- Baslik algilanamazsa varsayilan sutun indisleri kullanilir: subrack 1, serial 7, vendor 6, RET type 5.
+- Satirdan en az subrack ve serial alinamazsa satir atlanir.
+- Cihaz tipi seri numarasinin sonundaki r1/r2/b1/b2/y1/y2/y3/y4 kodundan algilanir.
+- Sektorler benzersiz subrack degerlerinden kurulur; subrack buyukten kucuge siralanir ve 1'den itibaren sektor numarasi atanir.
+- Device No, sektor numarasi * 100 + cihaz kod ofsetidir:
+  r1=0, r2=1, b1=4, b2=5, y1=8, y2=9, y3=10, y4=11.
+- Vendor HW degilse RET secenekleri R1 ve B1 band seceneklerinin birlesiminden turetilir; HW icin seri koduna ozel secenekler kullanilir.
+- Sektor atamasi degistirilebilir; RET satirlari surukle-birak ile sektorler arasinda tasinabilir veya tanimsiz bolgesine birakilabilir.
+- Sektor ekleme, parse edilmis subrack verisi yoksa calismaz; eklenen sektore ilk mevcut subrack atanir.
+- Sektor silindiginde sektor numaralari sonraki sektorler icin kaydirilir ve silinen sektordeki RET'ler tanimsiz duruma alinir.
+- Satir alanlari Device No, anten senaryosu, otomatik/manuel RET adi ve RET adi secimini icerir.
+- ADD RET sekmesi ADD RET komutlarini ve varsa RETSUBUNIT adini degistiren MOD RETSUBUNIT komutlarini olusturur.
+- Summary sekmesi cihaz no, RET adi ve seri numarasini listeler.
+- RMV RET sekmesi sektorlerdeki RET cihaz numaralarini kaldirma komutlarini olusturur.
+- Cikti kopyalanabilir ve indirilebilir; indirme adi aktif sekmeye gore rcu_add_ret.txt, rcu_rmv_ret.txt veya rcu_definition.txt olur.
+
+5. RCU DEGISTIRME SAYFASI (/update/)
+- Ayni sablonu kullanir; sektor/RET listesi, saha kodu ve ADD/summary/RMV sekme cubugu gizlidir.
+- Sayfa modret aktif sekmesiyle baslar ve seri numarasi degistirme kontrollerini gosterir.
+- Tablo parse edilince kaynak Device No, Device Name, Control Port Cabinet/Slot gibi basliklar bulunabilirse kaynak degerleri tutulur.
+- Kaynak Device No veya hesaplanan Device No bulunan cihazlar secim listesine eklenir.
+- Cihaz listesinde en az iki cihaz secilerek ard arda secilmis ciftler icin seri numarasi degistirme komutlari kurulur.
+- Her ciftte once iki gecici serial uretip sonra seri numaralarini takas eden dort MOD RET komutu cikartilir.
+- Gecici serial uretiminde window.crypto.getRandomValues kullanilir; hata olursa status mesaji verilir ve console'a hata yazilir.
+- Bu sayfanin ilk sekmesi modret olarak baslar; ciktinin indirme adi rcu_mod_ret.txt olur.
+
+6. TEMEL KOMUT VE VERI KURALLARI
+- ADD RET ornegi: ADD RET:DEVICENO=...,DEVICENAME="...",CTRLCN=0,CTRLSRN=...,CTRLSN=0,RETTYPE=...,SCENARIO=...,VENDORCODE="...",SERIALNO="...";
+- Silme ofsetleri her sektor icin [0, 1, 4, 5, 8, 9, 10, 11].
+- Herhangi bir komut formatini veya cihaz protokolunu degistirmeden once mevcut template'teki tam alan sirasi ve terminal noktalama isaretlerini koru.
+- JS DOM ciktisina eklenen kullanici kontrollu degerlerde escapeHtml() kullan; mevcut fonksiyon HTML metakarakterlerini kacirir.
+- Form duzenlemeleri state degiskenini gunceller; backend tarafina aktarilmaz.
+
+7. TEKNOLOJI VE BAGIMLILIKLAR
+- Python/Django; requirements.txt araliklari:
+  asgiref~=3.8.1
+  Django~=5.2.2
+  django-browser-reload~=1.13.0
+  python-decouple~=3.8
+  sqlparse~=0.5.1
+  gunicorn>=23,<24
+  whitenoise>=6.8,<7
+- Veritabani: SQLite (BASE_DIR/db.sqlite3).
+- Statik dosyalar: hello_world/static kaynaklari; collectstatic hedefi hello_world/staticfiles; production backend WhiteNoise CompressedManifestStaticFilesStorage.
+- Javascript/CSS icin npm manifesti, bundler veya build adimi yok.
+
+8. YEREL CALISTIRMA VE DEPLOY
+- Yerel venv mevcut olabilir: /workspaces/codespaces-django/.venv; baska ortamlarda requirements.txt uzerinden bagimliliklari yukle.
+- .env.example'i kopyalayip .env olusturmak devcontainer postCreate adimidir; gercek SECRET_KEY degerini hicbir sekilde repoya veya bu dosyaya yazma.
+- Gelistirme sunucusu: python manage.py runserver
+- Django kontrolleri: python manage.py check
+- Migration uygulama: python manage.py migrate
+- Render build: pip install -r requirements.txt && python manage.py collectstatic --no-input
+- Render start: python manage.py migrate --no-input && gunicorn hello_world.wsgi:application --bind 0.0.0.0:$PORT
+- Render DEBUG=False ve SECRET_KEY generateValue=true ayarliyor. Production settings SECRET_KEY bosken uygulamayi baslatmayi reddeder; HTTPS redirect, HSTS, secure cookies etkin.
+- settings.py, Render RENDER_EXTERNAL_HOSTNAME ve Codespaces port-forwarding domaini icin host/CSRF davranisi ayarlar.
+
+9. TEST VE DOGRULAMA DURUMU
+- Depoda izlenen test dosyasi veya test altyapisi tespit edilmedi.
+- Son RMV degisikligi icin izole Node.js komut testi calistirildi ve git diff --check basarili oldu.
+- Django test suite calistirilmadi.
+- Kullanici arayuzu icin browser otomasyon testi mevcut degil/tespit edilmedi.
+- Mantik degisikliginde ilgili JS output senaryolari icin test eklemek veya tarayicida elle kontrol etmek uygun olur; mevcut yapida JS template icinde oldugundan test entegrasyonu ayrica dusunulmelidir.
+
+10. SON KULLANICI ISTEGI VE UYGULANAN DEĞISIKLIK
+Istek:
+- "RMV RET kisminda 4.sektor icin silme islemi yok."
+
+Teshis:
+- RMV RET cikisi hello_world/templates/index.html icindeki buildOutput() fonksiyonunda olusturulur.
+- Eski mantik sadece state.sectors icindeki sektor numaralarini iterasyonla komuta ceviriyordu. Sadece uc sektor varsa dorduncu sektor komutu cikmiyordu.
+
+Uygulanan davranis:
+- En az bir sektor varsa RMV komutlari en az ilk dort sektor icin olusturulur.
+- Sektor numarasi 4'ten buyukse en yuksek sektor numarasina kadar cikti devam eder.
+- Sektor yoksa cikti bos kalir.
+- Her sektor icin komut device number degerleri sektor*100 + [0,1,4,5,8,9,10,11].
+- Sektor 4 ciktilari:
+  RMV RET:DEVICENO=400;
+  RMV RET:DEVICENO=401;
+  RMV RET:DEVICENO=404;
+  RMV RET:DEVICENO=405;
+  RMV RET:DEVICENO=408;
+  RMV RET:DEVICENO=409;
+  RMV RET:DEVICENO=410;
+  RMV RET:DEVICENO=411;
+- Degisiklik dosyasi: hello_world/templates/index.html.
+- Testte 1-3 sektor icin 32 toplam komut uretildi ve sektor 4 cihaz numaralari dogrulandi.
+
+11. GIT/CALISMA AGACI DEVIR UYARISI
+- Son incelemede aktif branch: main.
+- HEAD: a255f92 (ff); onceki kisa log: 839aa14 (mod ret), 279a73c (new), d3f2c0b (Initial commit), bf42f49 (Initial commit).
+- Git status son gorunumu: hello_world/templates/index.html MM ve AI_HANDOFF.txt untracked.
+- MM su demektir: template'te hem staged hem unstaged degisiklik bulunuyor.
+- Staged degisiklik: handleInputChange icinde deviceNo input event'inde buildOutput() cagirip erken cikis eklenmis. Bu degisiklik RMV RET isteginden bagimsizdir.
+- Unstaged degisikliklerde applyRetNames() davranis degisikligi vardir; manuel RET adi ve yinelenen isimlerin _B ek alisi ile ilgilidir. Bu da RMV isteginden bagimsizdir.
+- Unstaged diff icinde bu oturumda yapilan RMV RET degisikligi de vardir.
+- Bu mevcut kullanici degisikliklerini geri alma, staging durumunu degistirme veya ustune yazma. Devam etmeden once git status, git diff --cached ve git diff ile guncel hali tekrar kontrol et.
+- AI_HANDOFF.txt bu devir belgesidir ve bu oturumda olusturuldu.
+
+12. DEVAM EDECEK AI ICIN CALISMA NOTLARI
+- Degisikliklerin buyuk kismi hello_world/templates/index.html dosyasinda oldugu icin JS syntax ve DOM baglamini degistirirken dikkatli ol.
+- Herhangi bir dosyayi degistirmeden once calisma agacini ve mevcut diff'i kontrol et; bu depoda kullanicinin staged/unstaged kodu mevcut olabilir.
+- Gereksinim net degilse kullaniciya soru sor; komut protokol alanlarini tahmin etme.
+- Hassas .env, SECRET_KEY, veritabani ve kullaniciya ait verileri devir notuna/komut ciktilarina koyma.
+- Degisiklik sonrasi mumkun olan en dar kontrolu calistir; testler yoksa hangi manuel veya ad-hoc dogrulamanin yapildigini acikca bildir.

@@ -778,6 +778,10 @@
 
             if (target.dataset.role === 'deviceNo') {
                 row.deviceNo = target.value === '' ? '' : String(target.value);
+                if (event.type === 'input') {
+                    buildOutput();
+                    return;
+                }
             }
 
             if (target.dataset.role === 'retSelection') {
